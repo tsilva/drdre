@@ -1,144 +1,213 @@
-# DR.DRE
+<div align="center">
+  <img src="logo.png" alt="drdre" width="512"/>
 
-Free-tier-first semantic search for Portugal's Diário da República.
+  # drdre
 
-## What is implemented
+  **Diário da República Retrieval Engine**
 
-- `apps/web`: Vercel-ready Next.js frontend.
-- `apps/worker`: Cloudflare Worker API backed by D1, R2, and Vectorize.
-- `packages/builder`: local builder that downloads the weekly SQLite snapshot, normalizes documents, creates cold-storage shards, generates the hot semantic vector file, and syncs metadata/vectors to the Worker.
-- `packages/shared`: shared types, ranking logic, text utilities, and the `multilingual-e5-small` embedding helper used by both the builder and the browser search client.
+  🔍 Hybrid semantic search for Portugal's Diário da República — free-tier Cloudflare + Vercel, browser-side embeddings, zero ongoing server cost 🇵🇹
 
-## Repository layout
+  [![TypeScript 5.8](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
+  [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+  [![Vercel](https://img.shields.io/badge/Vercel-Deploy-000000?logo=vercel&logoColor=white)](https://vercel.com/)
 
-- [`apps/web`](/Users/tsilva/repos/tsilva/drdre/apps/web)
-- [`apps/worker`](/Users/tsilva/repos/tsilva/drdre/apps/worker)
-- [`packages/builder`](/Users/tsilva/repos/tsilva/drdre/packages/builder)
-- [`packages/shared`](/Users/tsilva/repos/tsilva/drdre/packages/shared)
-- [`builder.config.example.json`](/Users/tsilva/repos/tsilva/drdre/builder.config.example.json)
+</div>
 
-## Runtime architecture
+## 🤔 Why DR.DRE?
 
-- Vercel serves the UI.
-- Cloudflare Worker serves `/api/search` and `/api/document/:id`.
-- D1 stores metadata and FTS5 lexical search.
-- R2 stores full document payloads as compressed shard artifacts.
-- Vectorize stores embeddings for the hot semantic window.
-- The browser can generate the query embedding locally for hybrid search, which keeps hosted runtime costs down and matches the local builder model.
+**The Pain:** Portugal's official Diário da República search is keyword-only — noisy results, no semantic understanding, and no way to search by meaning. Alternatives require paid APIs or expensive server-side ML inference.
 
-## Local setup
+**The Solution:** DR.DRE combines FTS5 full-text search with semantic vector search using Reciprocal Rank Fusion (RRF). The browser generates embeddings client-side with `multilingual-e5-small` — no server-side inference cost. Everything runs on Cloudflare and Vercel free tiers.
+
+**The Result:** Search that understands both exact legal citations and natural language queries like "regras para construção em zonas protegidas", hosted for zero ongoing cost.
+
+## 🏗️ Architecture
+
+### Monorepo Layout
+
+| Workspace | Path | Description | Deploys to |
+|-----------|------|-------------|------------|
+| `@drdre/web` | `apps/web` | Next.js 15 search UI with client-side embedding | Vercel |
+| `@drdre/worker` | `apps/worker` | Hybrid search API over D1 + Vectorize | Cloudflare Workers |
+| `@drdre/shared` | `packages/shared` | Shared types, embedding wrapper, RRF logic | — |
+| `@drdre/builder` | `packages/builder` | CLI tool: download, normalize, embed, sync | Local |
+
+### Search Flow
+
+```mermaid
+flowchart LR
+    Browser["🌐 Browser"]
+    Worker["⚡ Worker"]
+    D1["🗄️ D1 (FTS5)"]
+    Vectorize["🧠 Vectorize"]
+    R2["📦 R2"]
+    RRF["🔀 RRF Merge"]
+
+    Browser -- "query + embedding" --> Worker
+    Worker --> D1
+    Worker --> Vectorize
+    D1 --> RRF
+    Vectorize --> RRF
+    RRF -- "ranked results" --> Browser
+    Worker -- "cold docs" --> R2
+```
+
+### Key Design Decisions
+
+- **Hybrid search** — RRF (K=60) merges FTS5 keyword results with semantic vector results for best-of-both-worlds ranking
+- **Browser-side embeddings** — `@xenova/transformers` runs `multilingual-e5-small` (384-dim) in the browser, eliminating server-side inference
+- **Hot/cold split** — last 24 months of vectors live in Vectorize for semantic search; older documents remain searchable via FTS5
+- **Graceful degradation** — if Vectorize is unavailable, the Worker automatically falls back to FTS-only search
+- **Edge caching** — search results cached for 300s at the edge, configurable via `SEARCH_CACHE_TTL_SECONDS`
+
+## 🚀 Quick Start
 
 ```bash
+git clone https://github.com/tsilva/drdre.git && cd drdre
 npm install
-npm run build
-npm test
+npm run dev:worker   # API on :8787
+npm run dev:web      # UI on :3000
 ```
 
-To run the UI locally:
+> **Note:** Search returns empty results until data is ingested. See [Data Ingestion](#-data-ingestion) below.
 
-```bash
-NEXT_PUBLIC_SEARCH_API_BASE_URL=http://127.0.0.1:8787 npm run dev:web
-```
+## ☁️ Deployment
 
-To run the Worker locally:
+### Cloudflare Worker
 
-```bash
-npm run dev:worker
-```
+1. **Create resources:**
+   ```bash
+   npx wrangler login
+   npx wrangler d1 create drdre-catalog
+   npx wrangler r2 bucket create drdre-documents
+   npx wrangler vectorize create drdre-hot --dimensions=384 --metric=cosine
+   ```
 
-## Cloudflare setup
+2. **Update config** — edit `apps/worker/wrangler.toml` with the returned `database_id`
 
-1. Create the D1 database, R2 bucket, and Vectorize index.
-2. Update [`apps/worker/wrangler.toml`](/Users/tsilva/repos/tsilva/drdre/apps/worker/wrangler.toml) with the real D1 database ID and bucket/index names.
-3. Apply the schema:
+3. **Apply schema:**
+   ```bash
+   npx wrangler d1 execute drdre-catalog --file apps/worker/migrations/0001_init.sql
+   ```
 
-```bash
-npx wrangler d1 execute drdre-catalog --file apps/worker/migrations/0001_init.sql
-```
+4. **Set admin secret:**
+   ```bash
+   npx wrangler secret put ADMIN_TOKEN
+   ```
 
-4. Set the Worker secret used by the local builder for admin sync:
+5. **Deploy:**
+   ```bash
+   cd apps/worker && npx wrangler deploy
+   ```
 
-```bash
-npx wrangler secret put ADMIN_TOKEN
-```
+### Vercel Frontend
 
-5. Deploy the Worker:
+1. Import the repo in Vercel
+2. Set **Root Directory** to `apps/web`
+3. Add environment variable:
+   ```
+   NEXT_PUBLIC_SEARCH_API_BASE_URL=https://drdre-api.<your-subdomain>.workers.dev
+   ```
+4. Deploy
 
-```bash
-npm run build --workspace @drdre/worker
-npx wrangler deploy
-```
+## 📥 Data Ingestion
 
-## Vercel setup
+The Builder CLI downloads official DR SQLite snapshots, normalizes documents, generates embeddings, and syncs everything to Cloudflare.
 
-Set:
+1. **Configure:**
+   ```bash
+   cp builder.config.example.json builder.config.json
+   # Edit builder.config.json with your Worker URL, admin token, and R2 credentials
+   ```
 
-- `NEXT_PUBLIC_SEARCH_API_BASE_URL=https://<your-worker-domain>`
+2. **Run pipeline** — download, normalize, embed, shard:
+   ```bash
+   npx tsx packages/builder/src/index.ts pipeline --config builder.config.json
+   ```
 
-Then deploy [`apps/web`](/Users/tsilva/repos/tsilva/drdre/apps/web) to Vercel.
+3. **Upload cold shards to R2:**
+   ```bash
+   npx tsx packages/builder/src/index.ts sync-r2 \
+     --config builder.config.json \
+     --manifest data/build/<snapshot-date>/manifest.json
+   ```
 
-## Builder workflow
+4. **Push metadata + vectors to Cloudflare:**
+   ```bash
+   npx tsx packages/builder/src/index.ts sync-worker \
+     --config builder.config.json \
+     --manifest data/build/<snapshot-date>/manifest.json
+   ```
 
-Copy the example config:
+## 📋 Commands
 
-```bash
-cp builder.config.example.json builder.config.json
-```
+### npm Scripts
 
-Fill in:
+| Command | Description |
+|---------|-------------|
+| `npm install` | Install all workspace dependencies |
+| `npm run dev:web` | Start Next.js dev server on `:3000` |
+| `npm run dev:worker` | Start Wrangler dev server on `:8787` |
+| `npm run build` | Build all workspaces |
+| `npm run typecheck` | TypeScript check all workspaces |
+| `npm test` | Run tests across all workspaces |
 
-- `adminApiBaseUrl`
-- `adminToken`
-- R2 credentials and endpoint
-- optional SQLite table/column overrides if the snapshot schema changes
+### Builder CLI
 
-### Bootstrap and build
+| Command | Description |
+|---------|-------------|
+| `pipeline --config <path>` | Full pipeline: download → normalize → embed → shard |
+| `sync-r2 --config <path> --manifest <path>` | Upload cold document shards to R2 |
+| `sync-worker --config <path> --manifest <path>` | Push metadata to D1, vectors to Vectorize |
 
-```bash
-npx tsx packages/builder/src/index.ts pipeline --config builder.config.json
-```
+All builder commands are run with: `npx tsx packages/builder/src/index.ts <command>`
 
-This:
+## ⚙️ Configuration
 
-- finds the latest `DRE.sqlite3.bz2`
-- downloads and extracts it into `data/downloads/`
-- normalizes documents
-- writes build artifacts into `data/build/<snapshot-date>/`
+### `builder.config.json`
 
-Important build outputs:
+| Key | Description |
+|-----|-------------|
+| `sourceBaseUrl` | Base URL for DR SQLite snapshots |
+| `workingDirectory` | Local directory for downloads and build output |
+| `hotWindowMonths` | Months of vectors to keep in Vectorize (default: `24`) |
+| `shardSize` | Documents per R2 shard (default: `200`) |
+| `adminApiBaseUrl` | Worker URL for admin endpoints |
+| `adminToken` | Secret token for admin API authentication |
+| `r2.endpoint` | Cloudflare R2 S3-compatible endpoint |
+| `r2.bucket` | R2 bucket name |
+| `r2.accessKeyId` | R2 API access key |
+| `r2.secretAccessKey` | R2 API secret key |
 
-- `manifest.json`
-- `catalog.seed.sql`
-- `hot-vectors.json`
-- compressed shard files for R2
+### `wrangler.toml` Bindings
 
-### Upload cold artifacts to R2
+| Binding | Type | Name |
+|---------|------|------|
+| `DB` | D1 Database | `drdre-catalog` |
+| `DOCUMENTS` | R2 Bucket | `drdre-documents` |
+| `HOT_INDEX` | Vectorize Index | `drdre-hot` |
 
-```bash
-npx tsx packages/builder/src/index.ts sync-r2 --config builder.config.json --manifest data/build/<snapshot-date>/manifest.json
-```
+## 🔌 API
 
-### Push metadata and vectors to the Worker
+### Public Endpoints
 
-```bash
-npx tsx packages/builder/src/index.ts sync-worker --config builder.config.json --manifest data/build/<snapshot-date>/manifest.json
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/search` | Hybrid search. Query params: `q` (required), `top_k`, `from`, `to`, `type`. POST also accepts `queryVector`. |
+| `GET` | `/api/document/:id` | Retrieve full document by ID (fetches from R2 cold storage if needed) |
 
-The Worker exposes two protected admin endpoints for this:
+### Admin Endpoints
 
-- `POST /admin/documents/upsert`
-- `POST /admin/vectors/upsert`
+Protected by `x-admin-token` header.
 
-## Search behavior
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/admin/documents/upsert` | Bulk upsert document metadata to D1 |
+| `POST` | `/admin/vectors/upsert` | Bulk upsert vectors to Vectorize |
 
-- `POST /api/search` accepts `q`, optional filters, and optional `queryVector`.
-- `GET /api/search?q=...` works for lexical search without a client-side embedding.
-- `GET /api/document/:id` resolves metadata from D1 and body text from R2.
-- If Vectorize is unavailable, the Worker degrades to FTS-only search.
-- If R2 is unavailable, search still returns metadata hits and snippets.
+CORS is enabled for all origins. GET search results are cached at the edge (default: 300s).
 
-## Notes and current limits
+## 📄 License
 
-- The builder currently assumes the DR mirror SQLite file is the main bootstrap source.
-- Source-table detection is heuristic; if the upstream SQLite schema changes, set explicit overrides in `builder.config.json`.
-- The browser-side embedding model increases first-search payload size. That is intentional for free-tier hosting, but if you later add a paid component, a dedicated query-embedding service is the first thing to move server-side.
+This project is provided as-is for educational and research purposes.
