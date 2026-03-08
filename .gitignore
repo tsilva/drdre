@@ -1,0 +1,17 @@
+node_modules
+.next
+.turbo
+dist
+coverage
+.wrangler
+.DS_Store
+*.tsbuildinfo
+data/
+tmp/
+*.sqlite3
+*.sqlite
+*.bz2
+*.gz
+.env
+.env.local
+.env.*.local

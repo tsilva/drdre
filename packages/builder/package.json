@@ -1,0 +1,21 @@
+{
+  "name": "@drdre/builder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "drdre-builder": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsx src/index.ts --help",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.864.0",
+    "@drdre/shared": "0.1.0",
+    "better-sqlite3": "^12.2.0",
+    "commander": "^14.0.0",
+    "unbzip2-stream": "^1.4.3"
+  }
+}

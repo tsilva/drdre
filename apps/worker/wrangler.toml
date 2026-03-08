@@ -1,0 +1,23 @@
+name = "drdre-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-08"
+
+[vars]
+SEARCH_CACHE_TTL_SECONDS = "300"
+HOT_WINDOW_MONTHS = "24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drdre-catalog"
+database_id = "replace-me"
+
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "drdre-documents"
+
+[[vectorize]]
+binding = "HOT_INDEX"
+index_name = "drdre-hot"
+
+[observability.logs]
+enabled = true

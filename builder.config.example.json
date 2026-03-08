@@ -1,0 +1,17 @@
+{
+  "sourceBaseUrl": "https://uploads.tretas.org",
+  "workingDirectory": "data",
+  "hotWindowMonths": 24,
+  "shardSize": 200,
+  "adminApiBaseUrl": "http://127.0.0.1:8787",
+  "adminToken": "replace-me",
+  "sqlite": {
+    "officialUrlTemplate": "https://diariodarepublica.pt/dr/detalhe/{id}"
+  },
+  "r2": {
+    "endpoint": "https://<account-id>.r2.cloudflarestorage.com",
+    "bucket": "drdre-documents",
+    "accessKeyId": "replace-me",
+    "secretAccessKey": "replace-me"
+  }
+}

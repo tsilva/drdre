@@ -1,0 +1,27 @@
+{
+  "name": "drdre",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev --workspace @drdre/web",
+    "dev:worker": "npm run dev --workspace @drdre/worker",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260303.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.5.0"
+  }
+}
