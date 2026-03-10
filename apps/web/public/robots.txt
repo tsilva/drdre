@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://drdre.tsilva.eu/sitemap.xml
